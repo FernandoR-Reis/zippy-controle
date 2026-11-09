@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zippy Controle</title>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v=3"></head><body>
+<div id="app"></div>
+<dialog id="dlg"><h3 id="dt" style="margin-top:0"></h3><div id="db" class="fm" style="grid-template-columns:1fr"></div>
+<div class="fm"><label>Motivo da divergência<select id="dr"><option value="">Sem divergência</option><option>item faltando</option><option>quantidade diferente</option><option>avaria</option><option>substituição</option></select></label><label>Observações<input id="do"></label></div>
+<div class="row" style="border:0"><button onclick="A.rc('full')">Chegou</button><button class="p" onclick="A.rc('part')">Chegou parcialmente</button><button class="x" onclick="A.rc('none')">Não chegou</button><button class="g" onclick="dlg.close()">Fechar</button></div></dialog>
+<dialog id="delete-sector-dialog" aria-labelledby="delete-sector-title">
+  <h3 id="delete-sector-title">Excluir setor definitivamente</h3>
+  <p id="delete-sector-impact" style="white-space:pre-line"></p>
+  <label>Digite o nome exato do setor<input id="delete-sector-name" autocomplete="off"></label>
+  <label class="row"><input id="delete-sector-ack" type="checkbox" style="width:auto">Entendo que os dados indicados serão apagados e não poderão ser recuperados.</label>
+  <div class="row">
+    <button class="g" autofocus onclick="document.getElementById('delete-sector-dialog').close()">Cancelar</button>
+    <button class="x" onclick="A.deleteSector(Number(document.getElementById('delete-sector-dialog').dataset.index),document.getElementById('delete-sector-name').value,document.getElementById('delete-sector-ack').checked)">Excluir definitivamente</button>
+  </div>
+</dialog>
+<dialog id="edit-item-dialog" aria-labelledby="edit-item-title">
+  <h3 id="edit-item-title">Editar item</h3>
+  <div class="fm">
+    <label>Nome<input id="edit-item-name" required></label>
+    <label>Setor<select id="edit-item-sector" required></select></label>
+    <label>Categoria<input id="edit-item-category"></label>
+    <label>Unidade de contagem<input id="edit-item-unit" list="count-unit-options" required></label>
+    <label>Unidade de compra<input id="edit-item-buy-unit" list="buy-unit-options" required></label>
+    <label>Unidades por compra<input id="edit-item-conversion" type="number" min="0.001" step="any" required></label>
+    <label>Estoque mínimo<input id="edit-item-minimum" type="number" min="0" step="any" required></label>
+    <label>Estoque ideal<input id="edit-item-ideal" type="number" min="0" step="any" required></label>
+    <label>Fornecedor principal<select id="edit-item-supplier"></select></label>
+    <label>Saldo atual<input id="edit-item-stock" type="number" min="0" step="any" required></label>
+  </div>
+  <div class="row">
+    <button class="p" onclick="A.updateItem(document.getElementById('edit-item-dialog').dataset.id)">Salvar alterações</button>
+    <button id="edit-item-toggle" onclick="A.on(document.getElementById('edit-item-dialog').dataset.id)">Ativar item</button>
+    <button class="x" onclick="document.getElementById('edit-item-delete-confirm').hidden=false">Excluir item</button>
+    <button class="g" autofocus onclick="document.getElementById('edit-item-dialog').close()">Fechar</button>
+  </div>
+  <div id="edit-item-delete-confirm" hidden>
+    <p>Excluir este item do cadastro? Os pedidos, compras e registros anteriores serão preservados. O item não poderá ser reativado após a exclusão.</p>
+    <button class="x" onclick="A.deleteItem(document.getElementById('edit-item-dialog').dataset.id)">Confirmar exclusão</button>
+    <button class="g" onclick="document.getElementById('edit-item-delete-confirm').hidden=true">Cancelar</button>
+  </div>
+</dialog>
+<dialog id="registration-dialog" class="registration-dialog" aria-labelledby="registration-title" aria-describedby="registration-help" oncancel="event.preventDefault();A.closeRegistrationBatch()">
+  <h3 id="registration-title"></h3>
+  <p id="registration-help" class="mu">Adicione os cadastros à lista. Os dados só serão gravados ao clicar em Salvar cadastros.</p>
+  <form id="registration-form" onsubmit="event.preventDefault();A.addRegistrationEntry()"></form>
+  <h3>Cadastros na lista</h3>
+  <div id="registration-batch-list" aria-live="polite"></div>
+  <div class="row">
+    <button id="registration-batch-save" type="button" onclick="A.saveRegistrationBatch()" disabled>Salvar cadastros</button>
+    <button class="g" type="button" onclick="A.closeRegistrationBatch()">Cancelar</button>
+  </div>
+</dialog>
+<dialog id="item-import-dialog" class="registration-dialog" aria-labelledby="item-import-title" oncancel="event.preventDefault();A.cancelItemImport()">
+  <h3 id="item-import-title">Importar planilha de contagem</h3>
+  <div id="item-import-content"></div>
+  <button class="g" type="button" onclick="A.cancelItemImport()">Fechar</button>
+</dialog>
+<datalist id="count-unit-options"></datalist>
+<datalist id="buy-unit-options"></datalist>
+<dialog id="new-suppliers-dialog" aria-labelledby="new-suppliers-title" aria-describedby="new-suppliers-help" oncancel="event.preventDefault();A.closeSupplierBatch()">
+  <h3 id="new-suppliers-title">Cadastrar fornecedores</h3>
+  <p id="new-suppliers-help" class="mu">Nome e celular com DDD são obrigatórios. Adicione cada fornecedor à lista. Os dados só serão gravados ao clicar em Salvar fornecedores.</p>
+  <form id="supplier-batch-form" onsubmit="event.preventDefault();A.newSup()">
+    <div class="fm">
+      <label>Nome<input id="s-name" required autofocus></label>
+      <label>Telefone celular<input id="s-ct" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="(11) 99999-9999" maxlength="15" pattern="\([1-9][0-9]\) 9[0-9]{4}-[0-9]{4}" required oninput="this.value=formatSupplierPhone(this.value)"></label>
+      <label>Prazo habitual (dias)<input id="s-ld" type="number" min="0" step="1" value="2" required></label>
+    </div>
+    <button class="add" type="submit">Adicionar à lista</button>
+  </form>
+  <h3>Fornecedores na lista</h3>
+  <div id="supplier-batch-list" aria-live="polite"></div>
+  <div class="row">
+    <button id="supplier-batch-save" type="button" onclick="A.saveSupplierBatch()" disabled>Salvar fornecedores</button>
+    <button class="g" type="button" onclick="A.closeSupplierBatch()">Cancelar</button>
+  </div>
+</dialog>
+<dialog id="edit-supplier-dialog" aria-labelledby="edit-supplier-title" onclick="if(event.target===this)this.close()">
+  <h3 id="edit-supplier-title">Editar fornecedor</h3>
+  <div class="fm">
+    <label>Nome<input id="edit-supplier-name" required></label>
+    <label>Telefone celular<input id="edit-supplier-contact" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="(11) 99999-9999" maxlength="15" pattern="\([1-9][0-9]\) 9[0-9]{4}-[0-9]{4}" required oninput="this.value=formatSupplierPhone(this.value)"></label>
+    <label>Prazo habitual (dias)<input id="edit-supplier-lead" type="number" min="0" step="1" required></label>
+  </div>
+  <div class="row">
+    <button class="p" onclick="A.updateSupplier(document.getElementById('edit-supplier-dialog').dataset.id)">Salvar alterações</button>
+    <button id="edit-supplier-toggle" class="supplier-toggle" onclick="A.toggleSupplier(document.getElementById('edit-supplier-dialog').dataset.id)">Inativar fornecedor</button>
+    <button class="x supplier-delete" onclick="document.getElementById('delete-supplier-confirm').hidden=false">Excluir fornecedor</button>
+  </div>
+  <div id="delete-supplier-confirm" hidden>
+    <p>Excluir este fornecedor do cadastro? Pedidos e registros anteriores serão preservados. O fornecedor não poderá ser reativado após a exclusão.</p>
+    <button class="x supplier-delete" onclick="A.deleteSupplier(document.getElementById('edit-supplier-dialog').dataset.id)">Confirmar exclusão</button>
+    <button class="g" onclick="document.getElementById('delete-supplier-confirm').hidden=true">Cancelar</button>
+  </div>
+</dialog>
+<script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script defer src="js/app.js?v=7"></script></body></html>
