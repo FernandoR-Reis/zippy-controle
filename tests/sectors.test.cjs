@@ -65,11 +65,43 @@ test("add actions use the orange button style", () => {
   assert.match(app.run("cadViews.suppliers()"), /<button class="add"[^>]*>Adicionar fornecedor/);
 });
 
-function setup({ empty = false, legacyData = false } = {}) {
+test("navigation has accessible icons, active state and a persistent collapse toggle", () => {
+  const app = setup();
+  const markup = app.run("navigation(NAV.filter((entry) => entry[2].includes(me().role)))");
+  assert.match(markup, /aria-label="Menu principal"/);
+  assert.equal((markup.match(/class="nav-link /g) || []).length, 9);
+  assert.equal((markup.match(/aria-current="page"/g) || []).length, 1);
+  assert.match(markup, /aria-expanded="true"/);
+  assert.match(markup, /aria-hidden="true"/);
+  app.run("A.toggleNavigation()");
+  assert.equal(app.state().navCollapsed, true);
+  assert.equal(JSON.parse(app.storage.get("zippy-controle-v2")).navCollapsed, true);
+  const collapsed = app.run("navigation(NAV)");
+  assert.match(collapsed, /is-collapsed/);
+  assert.match(collapsed, /aria-label="Expandir menu"/);
+  assert.match(collapsed, /aria-expanded="false"/);
+  app.run("A.nav('stock')");
+  assert.equal(app.state().v, "stock");
+  assert.equal(app.state().navCollapsed, true);
+  app.run("A.toggleNavigation()");
+  assert.equal(app.state().navCollapsed, false);
+});
+
+test("navigation collapse reports storage errors without changing state", () => {
+  const app = setup();
+  const before = app.state();
+  app.context.localStorage.setItem = () => { throw Error("Sem espaço"); };
+  app.run("A.toggleNavigation()");
+  assert.deepEqual(app.state(), before);
+  assert.deepEqual(app.messages, ["Sem espaço"]);
+});
+
+function setup({ empty = false, legacyData = false, storedData } = {}) {
   const messages = [];
   const storage = new Map(
     legacyData ? [["zippy-controle-v1", JSON.stringify({ fake: "data" })]] : [],
   );
+  if (storedData) storage.set("zippy-controle-v2", storedData);
   const nodes = new Map();
   const getNode = (selector) => {
     if (!nodes.has(selector)) {
@@ -128,6 +160,159 @@ function setup({ empty = false, legacyData = false } = {}) {
     storage,
   };
 }
+
+function fillWaste(app, { name = "Gin London Dry", sec = "Bar", q = "1", obs = "Garrafa quebrada" } = {}) {
+  app.node("#wi").value = name;
+  app.node("#wsec").value = sec;
+  app.node("#wq").value = q;
+  app.node("#wr").value = "avaria";
+  app.node("#wo").value = obs;
+}
+
+test("waste accepts new names without creating stock and persists reusable suggestions", () => {
+  const app = setup();
+  const before = app.state().i;
+  fillWaste(app, { name: "  Suco preparado  ", obs: "  Restou no fim do turno  " });
+  app.run("A.waste()");
+  assert.deepEqual(app.messages, []);
+  assert.deepEqual(app.state().i, before);
+  assert.equal(app.state().w[0].item, null);
+  assert.equal(app.state().w[0].name, "Suco preparado");
+  assert.equal(app.state().w[0].obs, "Restou no fim do turno");
+  const reloaded = setup({ empty: true, storedData: app.storage.get("zippy-controle-v2") });
+  assert.match(reloaded.run('wasteSuggestions("Bar", "name")'), /value="Suco preparado"/);
+  assert.match(reloaded.run('wasteSuggestions("Bar", "obs")'), /value="Restou no fim do turno"/);
+  assert.match(reloaded.run("V.waste()"), /Suco preparado/);
+  assert.doesNotThrow(() => reloaded.run("V.dash()"));
+});
+
+test("waste resolves registered items by trimmed case-insensitive name and preserves stock accounting", () => {
+  const app = setup();
+  fillWaste(app, { name: " gin london dry ", q: "1.5" });
+  app.run("A.waste()");
+  const state = app.state();
+  assert.deepEqual(app.messages, []);
+  assert.equal(state.w[0].item, "gin");
+  assert.equal(state.w[0].name, "Gin London Dry");
+  assert.equal(state.w[0].unit, "garrafa");
+  assert.equal(state.i.find((i) => i.id === "gin").stock, 1.5);
+  assert.equal(state.i.find((i) => i.id === "gin").lc.waste, 1.5);
+  assert.match(app.run("V.waste()"), /1,5 garrafa/);
+});
+
+test("waste suggestions deduplicate, escape text and include legacy records", () => {
+  const app = setup();
+  app.run(`
+    S.w.push(
+      {item:"gin",sec:"Bar",obs:" Quebrou "},
+      {item:"gin",sec:"Bar",obs:"quebrou"},
+      {item:null,name:'<Suco & "chá">',sec:"Bar",obs:'<img src=x onerror=alert(1)>'}
+    );
+  `);
+  assert.equal((app.run('wasteSuggestions("Bar", "name")').match(/value="Gin London Dry"/g) || []).length, 1);
+  assert.equal((app.run('wasteSuggestions("Bar", "obs")').match(/value="Quebrou"/g) || []).length, 1);
+  assert.match(app.run('wasteSuggestions("Bar", "name")'), /&lt;Suco &amp; &quot;chá&quot;&gt;/);
+  assert.doesNotMatch(app.run("V.waste()"), /<img src=x/);
+  assert.match(app.run("V.waste()"), /Limão/);
+});
+
+test("waste filter separates sectors and sector changes refresh suggestions without losing quantity", () => {
+  const app = setup();
+  app.run('S.sectors.push("Cozinha")');
+  fillWaste(app, { name: "Molho", sec: "Cozinha", obs: "Preparo excedente" });
+  app.run("A.waste()");
+  fillWaste(app);
+  app.run("A.waste()");
+  app.run('A.filterWaste("Bar")');
+  assert.match(app.run("V.waste()"), /Gin London Dry/);
+  assert.doesNotMatch(app.run("V.waste()"), /value="Molho"|Preparo excedente/);
+  app.run('A.filterWaste("Cozinha")');
+  const markup = app.run("V.waste()");
+  assert.match(markup, /value="Cozinha" selected/);
+  assert.match(markup, /value="Molho"/);
+  assert.doesNotMatch(markup, /Garrafa quebrada|Gin London Dry/);
+  app.node("#wsec").value = "Bar";
+  app.node("#wq").value = "3";
+  app.run("A.wasteSector()");
+  assert.equal(app.node("#wi").value, "");
+  assert.equal(app.node("#wo").value, "");
+  assert.equal(app.node("#wq").value, "3");
+  assert.match(app.node("#waste-item-options").innerHTML, /Gin London Dry/);
+  app.run('A.filterWaste("")');
+  assert.match(app.run("V.waste()"), /Molho/);
+  assert.match(app.run("V.waste()"), /Gin London Dry/);
+});
+
+test("waste history and suggestions respect employee sector even with a stale filter", () => {
+  const app = setup();
+  app.run('S.uid = "u1"; S.wasteFilter = "Hortifruti"');
+  assert.doesNotMatch(app.run("V.waste()"), /Hortifruti|Limão/);
+  fillWaste(app, { name: "Limão", sec: "Hortifruti" });
+  const before = app.state();
+  app.run("A.waste()");
+  assert.deepEqual(app.state(), before);
+  assert.match(app.messages[0], /setor autorizado/);
+  app.run('A.filterWaste("Hortifruti")');
+  assert.deepEqual(app.state(), before);
+  assert.match(app.messages[1], /Setor não autorizado/);
+  app.run('S.uid = "u2"');
+  fillWaste(app);
+  app.run("A.waste()");
+  assert.match(app.messages[2], /Sem permissão/);
+});
+
+test("waste rejects blank names, invalid quantities and inactive items without mutations", () => {
+  const app = setup();
+  for (const fields of [
+    { name: " " }, { q: "" }, { q: "0" }, { q: "-1" }, { q: "Infinity" }, { q: "abc" },
+  ]) {
+    fillWaste(app, fields);
+    const before = app.state();
+    app.run("A.waste()");
+    assert.deepEqual(app.state(), before);
+  }
+  app.run('item("gin").on = 0');
+  fillWaste(app);
+  const before = app.state();
+  app.run("A.waste()");
+  assert.deepEqual(app.state(), before);
+  assert.match(app.messages.at(-1), /inativo/);
+  assert.doesNotMatch(app.run('wasteSuggestions("Bar", "name")'), /Gin London Dry/);
+});
+
+test("waste storage failure reports the error and does not change stock or history", () => {
+  const app = setup();
+  fillWaste(app);
+  const before = app.state();
+  app.context.localStorage.setItem = () => { throw Error("Sem espaço"); };
+  app.run("A.waste()");
+  assert.deepEqual(app.state(), before);
+  assert.deepEqual(app.messages, ["Sem espaço"]);
+});
+
+test("new waste names follow sector renaming and deletion", () => {
+  const app = setup();
+  fillWaste(app, { name: "Suco preparado" });
+  app.run('A.waste(); A.filterWaste("Bar")');
+  app.node("#sector-0").value = "Bar principal";
+  app.run("A.renameSector(0)");
+  assert.equal(app.state().wasteFilter, "Bar principal");
+  assert.match(app.run('wasteSuggestions("Bar principal", "name")'), /Suco preparado/);
+  app.run('A.deleteSector(0, "Bar principal", true)');
+  assert.equal(app.state().wasteFilter, "");
+  assert.equal(app.state().w.some((w) => w.name === "Suco preparado"), false);
+  assert.doesNotMatch(app.run("V.waste()"), /Suco preparado/);
+});
+
+test("empty workspace explains why waste registration is disabled", () => {
+  const app = setup({ empty: true });
+  assert.match(app.run("V.waste()"), /disabled>Registrar/);
+  assert.match(app.run("V.waste()"), /Cadastre um setor/);
+  fillWaste(app);
+  app.run("A.waste()");
+  assert.equal(app.state().w.length, 0);
+  assert.match(app.messages[0], /setor autorizado/);
+});
 
 test("startup clears legacy demo data and leaves an empty administrator workspace", () => {
   const app = setup({ empty: true, legacyData: true });

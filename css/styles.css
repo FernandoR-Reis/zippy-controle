@@ -827,6 +827,105 @@ button.g,
     transform: none;
   }
 }
+.app-nav {
+  width: 244px;
+  flex: 0 0 244px;
+  padding: 18px 12px;
+  gap: 16px;
+  background: var(--sf);
+}
+.app-nav .nav-links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.app-nav button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-size: 13px;
+  text-align: left;
+}
+.app-nav svg {
+  flex: 0 0 20px;
+}
+.app-nav button:hover {
+  color: var(--tx);
+  background: var(--bg);
+}
+.app-nav button:focus-visible {
+  outline: 2px solid var(--or);
+  outline-offset: 2px;
+}
+.app-nav .nav-toggle {
+  color: var(--mu);
+  border-color: var(--ln);
+  font-size: 12px;
+}
+.app-nav .nav-link.on {
+  color: var(--or);
+  background: color-mix(in srgb, var(--or) 12%, var(--sf));
+  border-color: color-mix(in srgb, var(--or) 28%, var(--ln));
+  box-shadow: inset 3px 0 var(--or);
+  font-weight: 700;
+}
+.app-nav.is-collapsed {
+  width: 74px;
+  flex-basis: 74px;
+}
+.app-nav.is-collapsed .nav-label {
+  display: none;
+}
+.app-nav.is-collapsed .nav-toggle svg {
+  transform: rotate(180deg);
+}
+@media (max-width: 760px) {
+  .lay {
+    padding-bottom: 90px;
+  }
+  .app-nav,
+  .app-nav.is-collapsed {
+    width: auto;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+    gap: 8px;
+    align-items: stretch;
+    overflow: visible;
+  }
+  .app-nav .nav-toggle {
+    flex: 0 0 44px;
+    width: 44px;
+    padding: 10px;
+    justify-content: center;
+  }
+  .app-nav .nav-toggle .nav-label {
+    display: none;
+  }
+  .app-nav .nav-links {
+    flex: 1;
+    min-width: 0;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 2px;
+  }
+  .app-nav .nav-link {
+    flex: 0 0 auto;
+    width: auto;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px;
+    font-size: 11px;
+    text-align: center;
+  }
+  .app-nav.is-collapsed .nav-link {
+    flex-direction: row;
+    padding: 10px;
+  }
+}
 main.pi {
   animation: pi 0.3s ease both;
 }

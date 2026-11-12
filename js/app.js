@@ -154,6 +154,30 @@ const NAV = [
   ["cad", "Cadastros", ["admin"]],
   ["log", "Histórico", ["analista", "gestor", "compras", "admin"]],
 ];
+const navIcon = (id) => {
+  const paths = {
+    dash: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+    count: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v4H9zM8 13l2 2 5-5M9 18h6"/>',
+    stock: '<path d="m3 7 9-4 9 4v10l-9 4-9-4V7Zm0 0 9 4 9-4M12 11v10M7 5l9 4"/>',
+    orders: '<path d="M3 3h2l3 13h11l2-9H6M9 20h.01M18 20h.01"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/>',
+    deliv: '<path d="M3 5h11v12H3zM14 9h4l3 4v4h-7"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>',
+    waste: '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
+    sup: '<path d="M3 21V8l9-5 9 5v13M3 21h18M8 21v-6h8v6M8 9h1M15 9h1"/>',
+    cad: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M12 12v6M9 15h6"/>',
+    log: '<path d="M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2"/>',
+    collapse: '<path d="m14 7-5 5 5 5"/>',
+  };
+  return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[id] || paths.cad}</svg>`;
+};
+const navigation = (entries) =>
+  `<nav class="app-nav ${S.navCollapsed ? "is-collapsed" : ""}" aria-label="Menu principal">
+    <button class="nav-toggle" type="button" aria-expanded="${!S.navCollapsed}" aria-controls="nav-links" aria-label="${S.navCollapsed ? "Expandir menu" : "Recolher menu"}" title="${S.navCollapsed ? "Expandir menu" : "Recolher menu"}" onclick="A.toggleNavigation()">
+      ${navIcon("collapse")}<span class="nav-label">Recolher menu</span>
+    </button>
+    <div id="nav-links" class="nav-links">${entries.map(([id, label]) =>
+      `<button class="nav-link ${id == S.v ? "on" : ""}" type="button" aria-label="${label}" ${id == S.v ? 'aria-current="page"' : ""} title="${label}" onclick="A.nav('${id}')">${navIcon(id)}<span class="nav-label">${label}</span></button>`,
+    ).join("")}</div>
+  </nav>`;
 const lvl = (i) =>
   i.stock < i.min
     ? ["Abaixo do mínimo", "er"]
@@ -471,21 +495,49 @@ V.stock = () => {
     )
   );
 };
+const wasteSectors = () => me().role == "func"
+  ? S.sectors.filter((sector) => sector == me().sector)
+  : S.sectors;
+const wasteSuggestions = (sec, field) => {
+  const values = new Map(),
+    history = S.w.filter((w) => w.sec == sec),
+    names = field == "name"
+      ? [...history.filter((w) => !w.item || items(sec).some((i) => i.id == w.item))
+        .map((w) => w.name || item(w.item)?.name), ...items(sec).map((i) => i.name)]
+      : history.map((w) => w.obs);
+  names.forEach((value) => {
+    const text = value?.trim(),
+      key = text?.toLocaleLowerCase();
+    if (key && !values.has(key)) values.set(key, text);
+  });
+  return [...values.values()]
+    .map((value) => `<option value="${escHtml(value)}"></option>`).join("");
+};
 V.waste = () => {
-  const u = me(),
-    its = items().filter((i) => u.role != "func" || i.sector == u.sector),
-    ws = S.w.filter((w) => u.role != "func" || w.sec == u.sector);
+  const secs = wasteSectors(),
+    filter = secs.includes(S.wasteFilter) ? S.wasteFilter : "",
+    sec = filter || secs[0] || "",
+    ws = S.w.filter((w) => secs.includes(w.sec) && (!filter || w.sec == filter));
   return (
-    `<h2>Desperdícios</h2><div class="fm"><label>Item<select id="wi">${its.map((i) => `<option value="${i.id}">${i.name} (${i.unit})</option>`).join("")}</select></label><label>Quantidade<input id="wq" type="number" step="any" min="0"></label><label>Motivo<select id="wr"><option>vencimento</option><option>avaria</option><option>erro de preparo</option><option>sobra</option><option>outro</option></select></label><label>Observação<input id="wo"></label><button onclick="A.waste()">Registrar</button></div>` +
+    `<h2>Desperdícios</h2>
+    <div class="fm"><label>Filtrar por setor<select id="waste-filter" onchange="A.filterWaste(this.value)"><option value="">Todos os setores</option>${secs.map((s) => `<option value="${escHtml(s)}" ${s == filter ? "selected" : ""}>${escHtml(s)}</option>`).join("")}</select></label></div>
+    <div class="fm"><label>Setor do registro<select id="wsec" onchange="A.wasteSector()">${secs.map((s) => `<option value="${escHtml(s)}" ${s == sec ? "selected" : ""}>${escHtml(s)}</option>`).join("")}</select></label>
+    <label>Item<input id="wi" list="waste-item-options" placeholder="Digite ou selecione" autocomplete="off"></label>
+    <label>Quantidade<input id="wq" type="number" step="any" min="0"></label><label>Motivo<select id="wr"><option>vencimento</option><option>avaria</option><option>erro de preparo</option><option>sobra</option><option>outro</option></select></label>
+    <label>Observação<input id="wo" list="waste-note-options" placeholder="Digite ou selecione" autocomplete="off"></label><button onclick="A.waste()" ${secs.length ? "" : "disabled"}>Registrar</button></div>
+    <datalist id="waste-item-options">${wasteSuggestions(sec, "name")}</datalist>
+    <datalist id="waste-note-options">${wasteSuggestions(sec, "obs")}</datalist>
+    <p class="mu">${secs.length ? "Itens e observações registrados ficam disponíveis para reutilizar no mesmo setor. Itens cadastrados usam sua unidade e descontam o estoque; nomes novos ficam apenas neste histórico, sem custo estimado." : "Cadastre um setor antes de registrar desperdícios."}</p>
+    <h3>Histórico de desperdícios</h3>` +
     tb(
       ["Quando", "Item", "Qtd.", "Motivo", "Setor", "Responsável"],
       ws.map((w) => [
-        w.at,
-        nm(w.item),
-        N(w.q),
-        w.reason + (w.obs ? " · " + w.obs : ""),
+        escHtml(w.at),
+        escHtml(w.name || item(w.item)?.name || "Item removido"),
+        N(w.q) + (w.unit ? " " + escHtml(w.unit) : ""),
+        escHtml(w.reason) + (w.obs ? " · " + escHtml(w.obs) : ""),
         escHtml(w.sec),
-        w.by,
+        escHtml(w.by),
       ]),
     )
   );
@@ -750,6 +802,17 @@ V.log = () =>
     S.log.slice(0, 60).map((l) => [l.t, l.u, l.m]),
   );
 const A = {
+  toggleNavigation: () => {
+    try {
+      const next = { ...S, navCollapsed: !S.navCollapsed };
+      localStorage.setItem(K, JSON.stringify(next));
+      S = next;
+      render();
+      $(".nav-toggle").focus();
+    } catch (error) {
+      alert(error.message);
+    }
+  },
   openRegistrationBatch: registrationAction((kind) => {
     if (!["sectors", "items"].includes(kind)) throw Error("Cadastro não encontrado.");
     registrationKind = kind;
@@ -1228,6 +1291,7 @@ const A = {
     }
     if (S.sec == oldName) S.sec = name;
     if (S.f == oldName) S.f = name;
+    if (S.wasteFilter == oldName) S.wasteFilter = name;
     log(`Setor renomeado: ${oldName} → ${name}`);
   }),
   deleteSector: T((index, typed, acknowledged) => {
@@ -1290,6 +1354,7 @@ const A = {
       next.pend = 0;
     }
     if (next.f == name) next.f = "";
+    if (next.wasteFilter == name) next.wasteFilter = "";
     next.log.unshift({
       t: now(),
       u: me().name,
@@ -1367,25 +1432,58 @@ const A = {
     delete S.cs[sec];
     S.sec = null;
   }),
+  filterWaste: T((sec) => {
+    guard("waste");
+    if (sec && !wasteSectors().includes(sec)) throw Error("Setor não autorizado.");
+    S.wasteFilter = sec;
+  }),
+  wasteSector: () => {
+    $("#wi").value = "";
+    $("#wo").value = "";
+    $("#waste-item-options").innerHTML = wasteSuggestions($("#wsec").value, "name");
+    $("#waste-note-options").innerHTML = wasteSuggestions($("#wsec").value, "obs");
+  },
   waste: T(() => {
     guard("waste");
-    const i = item($("#wi").value),
-      q = parseFloat($("#wq").value);
-    gs(i.sector);
-    if (!(q > 0)) throw Error("Informe a quantidade.");
-    i.stock = Math.max(0, i.stock - q);
-    i.lc.waste += q;
-    S.w.unshift({
-      item: i.id,
+    const name = $("#wi").value.trim(),
+      sec = $("#wsec").value,
+      q = Number($("#wq").value),
+      reason = $("#wr").value,
+      obs = $("#wo").value.trim();
+    if (!wasteSectors().includes(sec)) throw Error("Selecione um setor autorizado.");
+    gs(sec);
+    if (!name) throw Error("Informe o item.");
+    if (!(q > 0) || !Number.isFinite(q)) throw Error("Informe uma quantidade maior que zero.");
+    if (!["vencimento", "avaria", "erro de preparo", "sobra", "outro"].includes(reason))
+      throw Error("Selecione um motivo válido.");
+    const i = S.i.find((i) => !i.deleted && i.sector == sec &&
+      i.name.trim().toLocaleLowerCase() == name.toLocaleLowerCase());
+    if (i && !i.on) throw Error("Este item está inativo no cadastro.");
+    const next = JSON.parse(JSON.stringify(S));
+    if (i) {
+      const current = next.i.find((entry) => entry.id == i.id);
+      current.stock = Math.max(0, current.stock - q);
+      current.lc.waste += q;
+    }
+    next.w.unshift({
+      item: i?.id || null,
+      name: i?.name || name,
+      unit: i?.unit || "",
       q,
-      reason: $("#wr").value,
-      obs: $("#wo").value,
+      reason,
+      obs,
       by: me().name,
       at: now(),
       d: ds(0),
-      sec: i.sector,
+      sec,
     });
-    log(`Desperdício: ${N(q)} ${i.unit} de ${i.name} (${$("#wr").value})`);
+    next.log.unshift({
+      t: now(),
+      u: me().name,
+      m: `Desperdício: ${N(q)}${i ? " " + i.unit : ""} de ${i?.name || name} (${reason}) · ${sec}`,
+    });
+    localStorage.setItem(K, JSON.stringify(next));
+    S = next;
   }),
   quote: T(() => {
     guard("ord");
@@ -1622,7 +1720,7 @@ function render() {
   else delete document.documentElement.dataset.theme;
   $("#app").innerHTML =
     `<header><div class="logo"><i>zippy</i><b>.</b><span>controle</span></div><select onchange="A.user(this.value)" title="Usuário atual">${S.u.map((x) => `<option value="${x.id}" ${x.id == S.uid ? "selected" : ""}>${x.name} · ${{ func: "Funcionário", analista: "Analista", gestor: "Gestor", compras: "Compras", admin: "Admin" }[x.role]}</option>`).join("")}</select><button class="bell" onclick="A.bell()" aria-label="Avisos" title="Avisos"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>${unread() ? `<b>${unread()}</b>` : ""}</button><label class="switch" title="Alternar tema"><input type="checkbox" aria-label="Alternar tema" ${(S.th ? S.th == "dark" : matchMedia("(prefers-color-scheme:dark)").matches) ? "checked" : ""} onchange="A.th()"><span class="slider"></span></label></header>
- ${panel()}<div class="lay"><nav>${nav.map((n) => `<button class="${n[0] == S.v ? "on" : ""}" onclick="A.nav('${n[0]}')">${n[1]}</button>`).join("")}</nav><main>${V[S.v]()}</main></div>`;
+ ${panel()}<div class="lay">${navigation(nav)}<main>${V[S.v]()}</main></div>`;
 }
 const series = () => {
   const dc = [34, 41, 38, 52, 47, 58, 55],
